@@ -562,7 +562,7 @@
         }
     }
 
-    async function generatePDF() {
+        async function generatePDF() {
         const empId = document.getElementById('currentEmployee').value;
         if (!empId) return alert('Please select an employee.');
         const emp = employees.find(e => e.id === empId);
@@ -576,71 +576,215 @@
         const total = pendingExpenses.reduce((sum, e) => sum + e.amount, 0);
         const fund = emp.revolvingFund;
         const cashOnHand = fund - total;
+        const replenishAmount = total;
         const submitDate = document.getElementById('submitDate').value;
         const note = document.getElementById('submitNote').value;
+        const fromDate = pendingExpenses[0].date;
+        const toDate = pendingExpenses[pendingExpenses.length - 1].date;
 
+        // --- TITLE ---
         doc.setFontSize(16);
-        doc.text('Revolving Fund Replenishment', 105, 20, { align: 'center' });
-        doc.setFontSize(10);
-        doc.text(`Employee Name: ${emp.name}`, 14, 35);
-        doc.text(`ID: ${emp.employeeId}`, 14, 42);
-        doc.text(`Revolving Fund: ₱${fund.toFixed(2)}`, 14, 49);
-        doc.text(`Expense Period`, 140, 35);
-        doc.text(`From: ${pendingExpenses[0].date}`, 140, 42);
-        doc.text(`To: ${pendingExpenses[pendingExpenses.length - 1].date}`, 140, 49);
-        doc.text(`Date Submitted: ${submitDate}`, 140, 56);
-
-        const tableColumn = ["DATE", "DESCRIPTION", "CATEGORY", "AMOUNT"];
-        const tableRows = pendingExpenses.map(exp => [exp.date, exp.description, exp.category, `₱${exp.amount.toFixed(2)}`]);
-
-        doc.autoTable({
-            head: [tableColumn], body: tableRows, startY: 65, theme: 'grid',
-            headStyles: { fillColor: [59, 130, 246] }, styles: { fontSize: 9 },
-            columnStyles: { 0: { cellWidth: 30 }, 3: { cellWidth: 30, halign: 'right' } }
-        });
-
-        const finalY = doc.lastAutoTable.finalY + 10;
-        doc.text(`TOTAL: ₱${total.toFixed(2)}`, 140, finalY);
-        doc.text(`LESS: Revolving Fund: ₱${fund.toFixed(2)}`, 140, finalY + 7);
-        doc.text(`CASH ON HAND: ₱${cashOnHand.toFixed(2)}`, 140, finalY + 14);
         doc.setFont('helvetica', 'bold');
-        doc.text(`AMOUNT TO BE REPLENISHED: ₱${total.toFixed(2)}`, 140, finalY + 24);
+        doc.text('Revolving Fund Replenishment', 105, 15, { align: 'center' });
         doc.setFont('helvetica', 'normal');
 
-        if (note) doc.text(`Note: ${note}`, 14, finalY + 10);
+        // --- HEADER BLOCK (Matching Excel Rows 3-9) ---
+        doc.setFontSize(10);
+        let y = 25;
+        
+        // Row 3
+        doc.text('Employee Name:', 14, y);
+        doc.setFont('helvetica', 'bold');
+        doc.text(emp.name, 45, y);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Expense Period', 120, y);
+        
+        // Row 4
+        y += 7;
+        doc.text('ID:', 14, y);
+        doc.setFont('helvetica', 'bold');
+        doc.text(emp.employeeId, 45, y);
+        doc.setFont('helvetica', 'normal');
+        doc.text('From:', 120, y);
+        doc.text(fromDate, 140, y);
 
-        const bankY = finalY + 40;
+        // Row 5
+        y += 7;
+        doc.text('To:', 120, y);
+        doc.text(toDate, 140, y);
+
+        // Row 7
+        y += 7;
+        doc.text('Date Submitted:', 120, y);
+        doc.text(submitDate, 150, y);
+
+        // Row 9
+        y += 10;
+        doc.text('Revolving Fund:', 14, y);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`₱${fund.toFixed(2)}`, 50, y);
+        doc.setFont('helvetica', 'normal');
+
+        // --- ITEMIZED EXPENSES TABLE (Matching Excel Rows 13-29) ---
+        y += 15;
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Itemized Expenses', 14, y);
+        
+        const tableColumn = ["DATE", "DESCRIPTION", "CATEGORY", "AMOUNT"];
+        const tableRows = pendingExpenses.map(exp => [
+            exp.date, 
+            exp.description, 
+            exp.category, 
+            `₱${exp.amount.toFixed(2)}`
+        ]);
+
+        doc.autoTable({
+            head: [tableColumn],
+            body: tableRows,
+            startY: y + 5,
+            theme: 'grid',
+            headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold' },
+            styles: { fontSize: 9, cellPadding: 3 },
+            columnStyles: {
+                0: { cellWidth: 25 },
+                1: { cellWidth: 85 },
+                2: { cellWidth: 40 },
+                3: { cellWidth: 30, halign: 'right' }
+            }
+        });
+
+        // --- SUMMARY & FOOTER BLOCK (Matching Excel Rows 29-34) ---
+        let finalY = doc.lastAutoTable.finalY + 10;
+        
+        // Check if we need a new page for the footer
+        if (finalY > 240) {
+            doc.addPage();
+            finalY = 20;
+        }
+
+        doc.setFontSize(10);
+        // Note on the left
+        if (note) {
+            doc.text('Note:', 14, finalY);
+            doc.setFont('helvetica', 'italic');
+            doc.text(note, 30, finalY);
+            doc.setFont('helvetica', 'normal');
+        }
+
+        // Financial Summary on the right
+        const sumX = 130;
+        doc.text('TOTAL', sumX, finalY);
+        doc.text(`₱${total.toFixed(2)}`, 185, finalY, { align: 'right' });
+
+        doc.text('LESS: Revolving Fund', sumX, finalY + 7);
+        doc.text(`₱${fund.toFixed(2)}`, 185, finalY + 7, { align: 'right' });
+
+        doc.text('CASH ON HAND', sumX, finalY + 14);
+        doc.text(`₱${cashOnHand.toFixed(2)}`, 185, finalY + 14, { align: 'right' });
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('AMOUNT TO BE REPLENISHED:', sumX, finalY + 24);
+        doc.text(`₱${replenishAmount.toFixed(2)}`, 185, finalY + 24, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+
+        doc.setTextColor(200, 0, 0); // Red text for reminder
+        doc.text("Don't forget to attach receipts!", sumX, finalY + 32);
+        doc.setTextColor(0, 0, 0); // Reset to black
+
+        // --- BANK DETAILS BLOCK (Matching Excel Rows 36-39) ---
+        const bankY = finalY + 45;
+        doc.setFont('helvetica', 'bold');
         doc.text('Please deposit on this account:', 14, bankY);
-        doc.text(`Bank: ${emp.bank}`, 14, bankY + 7);
-        doc.text(`Account Name: ${emp.accountName}`, 14, bankY + 14);
-        doc.text(`Account Number: ${emp.accountNumber}`, 14, bankY + 21);
+        doc.setFont('helvetica', 'normal');
+        
+        doc.text('Bank', 14, bankY + 8);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`: ${emp.bank}`, 35, bankY + 8);
+        doc.setFont('helvetica', 'normal');
 
-        const sigY = bankY + 40;
-        doc.text('Requested by:', 14, sigY); doc.text('_________________________', 14, sigY + 15); doc.text("Employee's Signature", 14, sigY + 22);
-        doc.text('Checked by:', 14, sigY + 35); doc.text('_________________________', 14, sigY + 50); doc.text('Supervisor', 14, sigY + 57);
-        doc.text('Approved by:', 110, sigY); doc.text('_________________________', 110, sigY + 15); doc.text('COO', 110, sigY + 22);
-        doc.text('_________________________', 110, sigY + 35); doc.text('CEO', 110, sigY + 42);
-        doc.text('Noted by:', 110, sigY + 55); doc.text('_________________________', 110, sigY + 70); doc.text('Finance', 110, sigY + 77);
+        doc.text('Account Name', 14, bankY + 15);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`: ${emp.accountName}`, 35, bankY + 15);
+        doc.setFont('helvetica', 'normal');
 
+        doc.text('Account Number', 14, bankY + 22);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`: ${emp.accountNumber}`, 35, bankY + 22);
+        doc.setFont('helvetica', 'normal');
+
+        // --- SIGNATURES BLOCK (Matching Excel Rows 42-55) ---
+        const sigY = bankY + 45;
+        
+        // Row 42
+        doc.text('Requested by:', 14, sigY);
+        doc.text('Employee\'s Signature', 70, sigY);
+        doc.line(14, sigY + 2, 60, sigY + 2); // Underline
+
+        // Row 45
+        doc.text('Checked by:', 14, sigY + 15);
+        doc.text('Supervisor', 70, sigY + 15);
+        doc.line(14, sigY + 17, 60, sigY + 17); // Underline
+
+        // Row 47 & 49 & 51 (Approved by)
+        doc.text('Approved by:', 14, sigY + 30);
+        doc.text('COO', 70, sigY + 30);
+        doc.line(14, sigY + 32, 60, sigY + 32); // Underline
+        
+        doc.text('CEO', 70, sigY + 40);
+        doc.line(14, sigY + 42, 60, sigY + 42); // Underline
+
+        // Row 55
+        doc.text('Noted by:', 14, sigY + 55);
+        doc.text('Finance', 70, sigY + 55);
+        doc.line(14, sigY + 57, 60, sigY + 57); // Underline
+
+        // --- ATTACH RECEIPTS ---
         let hasReceipts = false;
         for (const exp of pendingExpenses) {
             const recs = exp.receipts || [];
             for (const receipt of recs) {
                 if (!hasReceipts) {
-                    doc.addPage(); doc.setFontSize(14); doc.text('Attached Receipts', 105, 20, { align: 'center' }); hasReceipts = true;
-                } else { doc.addPage(); }
-                doc.setFontSize(10); doc.text(`${exp.date} - ${exp.description} (${receipt.name})`, 14, 30);
-                if (receipt.type === 'image') {
-                    try { doc.addImage(receipt.url, 'JPEG', 14, 35, 180, 0); } 
-                    catch (e) { doc.text('Could not embed image', 14, 40); }
+                    doc.addPage();
+                    doc.setFontSize(14);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text('Attached Receipts', 105, 20, { align: 'center' });
+                    doc.setFont('helvetica', 'normal');
+                    hasReceipts = true;
                 } else {
-                    doc.setTextColor(150, 0, 0); doc.text('PDF receipt on file', 14, 40); doc.setTextColor(0, 0, 0);
+                    doc.addPage();
+                }
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'bold');
+                doc.text(`${exp.date} - ${exp.description}`, 14, 30);
+                doc.setFont('helvetica', 'normal');
+                doc.text(`(${receipt.name})`, 14, 35);
+
+                if (receipt.type === 'image') {
+                    try {
+                        doc.addImage(receipt.url, 'JPEG', 14, 40, 180, 0);
+                    } catch (e) {
+                        doc.text('Could not embed image', 14, 45);
+                    }
+                } else {
+                    doc.setTextColor(150, 0, 0);
+                    doc.text('PDF receipt on file', 14, 45);
+                    doc.setTextColor(0, 0, 0);
                 }
             }
         }
 
-        doc.save(`RF_Replenishment_${emp.name.replace(/\s/g, '_')}_${submitDate}.pdf`);
-        pendingExpenses.forEach(exp => db.collection('expenses').doc(exp.id).update({ status: 'submitted' }));
+        // Save PDF
+        const fileName = `RF_Replenishment_${emp.name.replace(/\s/g, '_')}_${submitDate}.pdf`;
+        doc.save(fileName);
+
+        // Mark as submitted in database
+        pendingExpenses.forEach(exp => {
+            db.collection('expenses').doc(exp.id).update({ status: 'submitted' });
+        });
+        
         alert('PDF Generated and expenses marked as submitted!');
     }
 </script>

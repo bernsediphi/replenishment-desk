@@ -219,12 +219,13 @@
         firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
         const db = firebase.firestore();
-        const storage = firebase.storage();
 
         // --- SUPABASE SETUP ---
-        const SUPABASE_URL = 'PASTE_YOUR_SUPABASE_PROJECT_URL_HERE';
-        const SUPABASE_ANON_KEY = 'PASTE_YOUR_SUPABASE_ANON_KEY_HERE';
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const SUPABASE_URL = https://tixckbbyxrhvsljjbxuo.supabase.co; // Keep your actual URL here
+        const SUPABASE_ANON_KEY = sb_publishable_w4Ongi6sBdKqNoNskF9YwQ_QQdZvsDY; // Keep your actual key here
+        
+        // FIX: Use 'sb' instead of 'supabase' to prevent crashing the script
+        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // --- STATE ---
         let currentUser = null;

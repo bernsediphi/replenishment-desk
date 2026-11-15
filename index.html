@@ -13,6 +13,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
         .tab-active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 600; }
@@ -200,6 +201,11 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
         const storage = firebase.storage();
+
+        // --- SUPABASE SETUP ---
+        const SUPABASE_URL = 'PASTE_YOUR_SUPABASE_PROJECT_URL_HERE';
+        const SUPABASE_ANON_KEY = 'PASTE_YOUR_SUPABASE_ANON_KEY_HERE';
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // --- STATE ---
         let currentUser = null;
@@ -421,43 +427,66 @@
         }
 
         async function addExpense(e) {
-            e.preventDefault();
-            const empId = document.getElementById('currentEmployee').value;
-            if (!empId) return alert('Please select an employee first.');
+    e.preventDefault();
+    const empId = document.getElementById('currentEmployee').value;
+    if (!empId) return alert('Please select an employee first.');
 
-            const id = db.collection('expenses').doc().id;
-            let receiptUrls = [];
+    const id = db.collection('expenses').doc().id;
+    let receiptUrls = [];
 
-            // Upload receipts to Firebase Storage
-            for (let receipt of tempReceipts) {
-                try {
-                    const ref = storage.ref(`receipts/${currentUser.uid}/${id}/${receipt.name}`);
-                    await ref.putString(receipt.data, 'data_url', { contentType: receipt.type === 'image' ? 'image/jpeg' : 'application/pdf' });
-                    const url = await ref.getDownloadURL();
-                    receiptUrls.push({ name: receipt.name, url: url, type: receipt.type });
-                } catch (err) {
-                    alert('Failed to upload receipt: ' + receipt.name);
-                    return;
-                }
-            }
+    // Upload receipts to Supabase Storage
+    for (let receipt of tempReceipts) {
+        try {
+            // Convert base64 data URL to a Blob for Supabase
+            const res = await fetch(receipt.data);
+            const blob = await res.blob();
+            
+            const fileExt = receipt.name.split('.').pop();
+            // Path: userId/expenseId/timestamp.ext
+            const fileName = `${currentUser.uid}/${id}/${Date.now()}.${fileExt}`;
 
-            const expense = {
-                userId: currentUser.uid,
-                employeeId: empId,
-                date: document.getElementById('expDate').value,
-                amount: parseFloat(document.getElementById('expAmount').value),
-                description: document.getElementById('expDesc').value,
-                category: document.getElementById('expCategory').value,
-                receipts: receiptUrls,
-                status: 'pending'
-            };
+            const { data, error } = await supabase.storage
+                .from('receipts')
+                .upload(fileName, blob, {
+                    contentType: receipt.type === 'image' ? 'image/jpeg' : 'application/pdf',
+                    upsert: false
+                });
 
-            try {
-                await db.collection('expenses').doc(id).set(expense);
-                resetExpenseForm();
-            } catch (err) { alert('Error saving expense: ' + err.message); }
+            if (error) throw error;
+
+            // Get the public URL to save in Firestore
+            const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(fileName);
+            
+            receiptUrls.push({ 
+                name: receipt.name, 
+                url: publicUrl, 
+                path: fileName, // Save path so we can delete it later
+                type: receipt.type 
+            });
+        } catch (err) {
+            alert('Failed to upload receipt: ' + receipt.name + ' - ' + err.message);
+            return; // Stop if upload fails
         }
+    }
 
+    const expense = {
+        userId: currentUser.uid,
+        employeeId: empId,
+        date: document.getElementById('expDate').value,
+        amount: parseFloat(document.getElementById('expAmount').value),
+        description: document.getElementById('expDesc').value,
+        category: document.getElementById('expCategory').value,
+        receipts: receiptUrls, // Now contains Supabase URLs
+        receiptCount: receiptUrls.length,
+        status: 'pending'
+    };
+
+    try {
+        await db.collection('expenses').doc(id).set(expense);
+        resetExpenseForm();
+    } catch (err) { alert('Error saving expense to database: ' + err.message); }
+}
+        
         function resetExpenseForm() {
             document.getElementById('expenseForm').reset();
             document.getElementById('expDate').valueAsDate = new Date();
@@ -466,10 +495,22 @@
         }
 
         async function deleteExpense(id) {
-            if (!confirm('Delete this expense?')) return;
-            try { await db.collection('expenses').doc(id).delete(); } 
-            catch (err) { alert('Error deleting expense: ' + err.message); }
+    if (!confirm('Delete this expense?')) return;
+    try {
+        // 1. Get the receipt paths from Firestore
+        const expDoc = await db.collection('expenses').doc(id).get();
+        const receipts = expDoc.data().receipts || [];
+        
+        // 2. Delete files from Supabase Storage
+        if (receipts.length > 0) {
+            const pathsToDelete = receipts.map(r => r.path);
+            await supabase.storage.from('receipts').remove(pathsToDelete);
         }
+
+        // 3. Delete the document from Firestore
+        await db.collection('expenses').doc(id).delete();
+    } catch (err) { alert('Error deleting expense: ' + err.message); }
+}
 
         async function markSubmitted(id) {
             try { await db.collection('expenses').doc(id).update({ status: 'submitted' }); } 
@@ -616,21 +657,32 @@
             doc.text('Noted by:', 110, sigY + 55); doc.text('_________________________', 110, sigY + 70); doc.text('Finance', 110, sigY + 77);
 
             // Attach Receipts
-            let hasReceipts = false;
-            pendingExpenses.forEach(exp => {
-                if (exp.receipts && exp.receipts.length > 0) {
-                    exp.receipts.forEach(receipt => {
-                        if (!hasReceipts) {
-                            doc.addPage(); doc.setFontSize(14); doc.text('Attached Receipts', 105, 20, { align: 'center' }); hasReceipts = true;
-                        } else { doc.addPage(); }
-                        doc.setFontSize(10); doc.text(`${exp.date} - ${exp.description}`, 14, 30);
-                        
-                        if (receipt.type === 'image') {
+           let hasReceipts = false;
+            for (const exp of pendingExpenses) {
+                const recs = exp.receipts || [];
+                for (const receipt of recs) {
+                    if (!hasReceipts) {
+                        doc.addPage();
+                        doc.setFontSize(14);
+                        doc.text('Attached Receipts', 105, 20, { align: 'center' });
+                        hasReceipts = true;
+                    } else {
+                        doc.addPage();
+                    }
+                    doc.setFontSize(10);
+                    doc.text(`${exp.date} - ${exp.description} (${receipt.name})`, 14, 30);
+
+                    if (receipt.type === 'image') {
+                        try {
+                            // jsPDF can load public Supabase URLs directly
                             doc.addImage(receipt.url, 'JPEG', 14, 35, 180, 0);
-                        } else {
-                            doc.setTextColor(0, 0, 255);
-                            doc.textWithLink('View PDF Receipt', 14, 40, { url: receipt.url });
-                            doc.setTextColor(0, 0, 0);
+                        } catch (e) {
+                            doc.text('Could not embed image (check internet connection)', 14, 40);
+                        }
+                    } else {
+                        doc.setTextColor(150, 0, 0);
+                        doc.text('PDF receipt on file — send the original file to Finance.', 14, 40);
+                        doc.setTextColor(0, 0, 0);
                         }
                     });
                 }

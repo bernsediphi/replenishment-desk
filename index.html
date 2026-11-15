@@ -203,519 +203,446 @@
         </div>
     </div>
 
-    <script>
-        // ==========================================
-        // 1. FIREBASE CONFIGURATION (REPLACE THIS!)
-        // ==========================================
-        const firebaseConfig = {
-            apiKey: "AIzaSyBhfzbUBvDJSwSQ4HnLq1cSIHnRG31EWXQ",
-            authDomain: "replenishment-desk.firebaseapp.com",
-            projectId: "replenishment-desk",
-            storageBucket: "replenishment-desk.firebasestorage.app",
-            messagingSenderId: "1096121825331",
-            appId: "1:1096121825331:web:8f24e1d61f6639f8550b46"
-        };
+<script>
+    // ==========================================
+    // 1. CONFIGURATION (PASTE YOUR KEYS HERE)
+    // ==========================================
+    const firebaseConfig = {
+        apiKey: "AIzaSyBhfzbUBvDJSwSQ4HnLq1cSIHnRG31EWXQ",
+        authDomain: "replenishment-desk.firebaseapp.com",
+        projectId: "replenishment-desk",
+        storageBucket: "replenishment-desk.firebasestorage.app",
+        messagingSenderId: "1096121825331",
+        appId: "1:1096121825331:web:8f24e1d61f6639f8550b46"
+    };
 
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-        const db = firebase.firestore();
-
-        // --- SUPABASE SETUP ---
         const SUPABASE_URL = https://tixckbbyxrhvsljjbxuo.supabase.co; // Keep your actual URL here
         const SUPABASE_ANON_KEY = sb_publishable_w4Ongi6sBdKqNoNskF9YwQ_QQdZvsDY; // Keep your actual key here
-        
-        // FIX: Use 'sb' instead of 'supabase' to prevent crashing the script
-        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // --- STATE ---
-        let currentUser = null;
-        let employees = [];
-        let expenses = [];
-        let currentTab = 'pending';
-        let tempReceipts = [];
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
 
-        // ==========================================
-        // 2. AUTHENTICATION LOGIC
-        // ==========================================
-        function toggleAuth(mode) {
-            document.getElementById('loginForm').classList.toggle('hidden', mode !== 'login');
-            document.getElementById('signupForm').classList.toggle('hidden', mode !== 'signup');
-            document.getElementById('authError').classList.add('hidden');
+    // Initialize Supabase (using 'sb' to avoid variable name conflicts)
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // --- STATE ---
+    let currentUser = null;
+    let employees = [];
+    let expenses = [];
+    let currentTab = 'pending';
+    let tempReceipts = [];
+
+    // ==========================================
+    // 2. AUTHENTICATION
+    // ==========================================
+    function toggleAuth(mode) {
+        document.getElementById('loginForm').classList.toggle('hidden', mode !== 'login');
+        document.getElementById('signupForm').classList.toggle('hidden', mode !== 'signup');
+        document.getElementById('authError').classList.add('hidden');
+    }
+
+    function showAuthError(msg) {
+        const el = document.getElementById('authError');
+        el.textContent = msg.replace('Firebase: ', '');
+        el.classList.remove('hidden');
+    }
+
+    async function login() {
+        const email = document.getElementById('loginEmail').value;
+        const pass = document.getElementById('loginPassword').value;
+        try { await auth.signInWithEmailAndPassword(email, pass); } 
+        catch (e) { showAuthError(e.message); }
+    }
+
+    async function signup() {
+        const email = document.getElementById('signupEmail').value;
+        const pass = document.getElementById('signupPassword').value;
+        try { await auth.createUserWithEmailAndPassword(email, pass); } 
+        catch (e) { showAuthError(e.message); }
+    }
+
+    function logout() { auth.signOut(); }
+
+    auth.onAuthStateChanged(user => {
+        if (user) {
+            currentUser = user;
+            document.getElementById('authScreen').classList.add('hidden');
+            document.getElementById('mainApp').classList.remove('hidden');
+            document.getElementById('userEmail').textContent = user.email;
+            initApp();
+        } else {
+            currentUser = null;
+            document.getElementById('authScreen').classList.remove('hidden');
+            document.getElementById('mainApp').classList.add('hidden');
+            employees = []; expenses = [];
+            renderEmployeeDropdown(); renderExpenses(); updateSummary();
         }
+    });
 
-        function showAuthError(msg) {
-            const el = document.getElementById('authError');
-            el.textContent = msg.replace('Firebase: ', '');
-            el.classList.remove('hidden');
-        }
+    // ==========================================
+    // 3. APP INITIALIZATION
+    // ==========================================
+    function initApp() {
+        document.getElementById('expDate').valueAsDate = new Date();
+        document.getElementById('submitDate').valueAsDate = new Date();
 
-        async function login() {
-            const email = document.getElementById('loginEmail').value;
-            const pass = document.getElementById('loginPassword').value;
-            try {
-                await auth.signInWithEmailAndPassword(email, pass);
-            } catch (e) { showAuthError(e.message); }
-        }
-
-        async function signup() {
-            const email = document.getElementById('signupEmail').value;
-            const pass = document.getElementById('signupPassword').value;
-            try {
-                await auth.createUserWithEmailAndPassword(email, pass);
-            } catch (e) { showAuthError(e.message); }
-        }
-
-        function logout() {
-            auth.signOut();
-        }
-
-        // Listen for login/logout state changes
-        auth.onAuthStateChanged(user => {
-            if (user) {
-                currentUser = user;
-                document.getElementById('authScreen').classList.add('hidden');
-                document.getElementById('mainApp').classList.remove('hidden');
-                document.getElementById('userEmail').textContent = user.email;
-                initApp();
-            } else {
-                currentUser = null;
-                document.getElementById('authScreen').classList.remove('hidden');
-                document.getElementById('mainApp').classList.add('hidden');
-                employees = [];
-                expenses = [];
-                renderEmployeeDropdown();
-                renderExpenses();
-                updateSummary();
-            }
+        db.collection('employees').where('userId', '==', currentUser.uid).onSnapshot(snap => {
+            employees = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            renderEmployeeDropdown(); loadEmployeeData();
         });
 
-        // ==========================================
-        // 3. APP INITIALIZATION & DATA LISTENERS
-        // ==========================================
-        function initApp() {
-            document.getElementById('expDate').valueAsDate = new Date();
-            document.getElementById('submitDate').valueAsDate = new Date();
+        db.collection('expenses').where('userId', '==', currentUser.uid).onSnapshot(snap => {
+            expenses = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            renderExpenses(); updateSummary();
+        });
+    }
 
-            // Real-time listener for Employees
-            db.collection('employees')
-              .where('userId', '==', currentUser.uid)
-              .onSnapshot(snapshot => {
-                  employees = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                  renderEmployeeDropdown();
-                  loadEmployeeData();
-              });
-
-            // Real-time listener for Expenses
-            db.collection('expenses')
-              .where('userId', '==', currentUser.uid)
-              .onSnapshot(snapshot => {
-                  expenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                  renderExpenses();
-                  updateSummary();
-              });
-        }
-
-        // ==========================================
-        // 4. EMPLOYEE MANAGEMENT (CLOUD)
-        // ==========================================
-        function openPersonModal(person = null) {
-            document.getElementById('personModal').classList.remove('hidden');
-            document.getElementById('personModal').classList.add('flex');
-            if (person) {
-                document.getElementById('editPersonId').value = person.id;
-                document.getElementById('pName').value = person.name;
-                document.getElementById('pId').value = person.employeeId;
-                document.getElementById('pFund').value = person.revolvingFund;
-                document.getElementById('pBank').value = person.bank;
-                document.getElementById('pAccName').value = person.accountName;
-                document.getElementById('pAccNum').value = person.accountNumber;
-            } else {
-                document.getElementById('personForm').reset();
-                document.getElementById('editPersonId').value = '';
-            }
-        }
-
-        function closePersonModal() {
-            document.getElementById('personModal').classList.add('hidden');
-            document.getElementById('personModal').classList.remove('flex');
-        }
-
-        async function savePerson(e) {
-            e.preventDefault();
-            const id = document.getElementById('editPersonId').value || db.collection('employees').doc().id;
-            const person = {
-                userId: currentUser.uid, // Ties data to this specific user
-                name: document.getElementById('pName').value,
-                employeeId: document.getElementById('pId').value,
-                revolvingFund: parseFloat(document.getElementById('pFund').value),
-                bank: document.getElementById('pBank').value,
-                accountName: document.getElementById('pAccName').value,
-                accountNumber: document.getElementById('pAccNum').value
-            };
-
-            try {
-                await db.collection('employees').doc(id).set(person);
-                closePersonModal();
-            } catch (err) { alert('Error saving person: ' + err.message); }
-        }
-
-        async function deleteCurrentPerson() {
-            const empId = document.getElementById('currentEmployee').value;
-            if (!empId) return alert('Please select an employee to delete.');
-            if (!confirm('Are you sure? This will also delete all their expenses.')) return;
-
-            try {
-                const batch = db.batch();
-                const expSnap = await db.collection('expenses').where('userId', '==', currentUser.uid).where('employeeId', '==', empId).get();
-                expSnap.docs.forEach(doc => batch.delete(doc.ref));
-                batch.delete(db.collection('employees').doc(empId));
-                await batch.commit();
-                document.getElementById('currentEmployee').value = '';
-            } catch (err) { alert('Error deleting: ' + err.message); }
-        }
-
-        function renderEmployeeDropdown() {
-            const select = document.getElementById('currentEmployee');
-            const currentVal = select.value;
-            select.innerHTML = '<option value="">-- Select an employee --</option>';
-            employees.forEach(emp => {
-                select.innerHTML += `<option value="${emp.id}">${emp.name} (${emp.employeeId})</option>`;
-            });
-            select.value = currentVal;
-        }
-
-        function loadEmployeeData() {
-            const empId = document.getElementById('currentEmployee').value;
-            const detailsDiv = document.getElementById('employeeDetails');
-            if (!empId) { detailsDiv.classList.add('hidden'); updateSummary(); return; }
-            
-            const emp = employees.find(e => e.id === empId);
-            if (emp) {
-                detailsDiv.classList.remove('hidden');
-                document.getElementById('empId').textContent = emp.employeeId;
-                document.getElementById('empFund').textContent = emp.revolvingFund.toFixed(2);
-                document.getElementById('empBank').textContent = emp.bank;
-                document.getElementById('empAccName').textContent = emp.accountName;
-                document.getElementById('empAccNum').textContent = emp.accountNumber;
-            }
-            renderExpenses();
-            updateSummary();
-        }
-
-        // ==========================================
-        // 5. EXPENSE MANAGEMENT (CLOUD + STORAGE)
-        // ==========================================
-        function handleFiles(files) {
-            tempReceipts = [];
-            const preview = document.getElementById('receiptPreview');
-            preview.innerHTML = '';
-            
-            Array.from(files).forEach(file => {
-                if (file.type.startsWith('image/')) {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        const img = new Image();
-                        img.onload = function() {
-                            const canvas = document.createElement('canvas');
-                            const MAX_WIDTH = 800;
-                            let width = img.width; let height = img.height;
-                            if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
-                            canvas.width = width; canvas.height = height;
-                            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-                            const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-                            tempReceipts.push({ name: file.name, data: dataUrl, type: 'image' });
-                            
-                            const thumb = document.createElement('img');
-                            thumb.src = dataUrl; thumb.className = 'receipt-thumb';
-                            preview.appendChild(thumb);
-                        };
-                        img.src = e.target.result;
-                    };
-                    reader.readAsDataURL(file);
-                } else {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        tempReceipts.push({ name: file.name, data: e.target.result, type: 'pdf' });
-                        const icon = document.createElement('div');
-                        icon.className = 'w-16 h-16 bg-red-100 text-red-600 flex items-center justify-center rounded text-xs font-bold';
-                        icon.textContent = 'PDF';
-                        preview.appendChild(icon);
-                    };
-                    reader.readAsDataURL(file);
-                }
-            });
-        }
-
-        async function addExpense(e) {
-    e.preventDefault();
-    const empId = document.getElementById('currentEmployee').value;
-    if (!empId) return alert('Please select an employee first.');
-
-    const id = db.collection('expenses').doc().id;
-    let receiptUrls = [];
-
-    // Upload receipts to Supabase Storage
-    for (let receipt of tempReceipts) {
-        try {
-            // Convert base64 data URL to a Blob for Supabase
-            const res = await fetch(receipt.data);
-            const blob = await res.blob();
-            
-            const fileExt = receipt.name.split('.').pop();
-            // Path: userId/expenseId/timestamp.ext
-            const fileName = `${currentUser.uid}/${id}/${Date.now()}.${fileExt}`;
-
-            const { data, error } = await supabase.storage
-                .from('receipts')
-                .upload(fileName, blob, {
-                    contentType: receipt.type === 'image' ? 'image/jpeg' : 'application/pdf',
-                    upsert: false
-                });
-
-            if (error) throw error;
-
-            // Get the public URL to save in Firestore
-            const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(fileName);
-            
-            receiptUrls.push({ 
-                name: receipt.name, 
-                url: publicUrl, 
-                path: fileName, // Save path so we can delete it later
-                type: receipt.type 
-            });
-        } catch (err) {
-            alert('Failed to upload receipt: ' + receipt.name + ' - ' + err.message);
-            return; // Stop if upload fails
+    // ==========================================
+    // 4. EMPLOYEE MANAGEMENT
+    // ==========================================
+    function openPersonModal(person = null) {
+        document.getElementById('personModal').classList.remove('hidden');
+        document.getElementById('personModal').classList.add('flex');
+        if (person) {
+            document.getElementById('editPersonId').value = person.id;
+            document.getElementById('pName').value = person.name;
+            document.getElementById('pId').value = person.employeeId;
+            document.getElementById('pFund').value = person.revolvingFund;
+            document.getElementById('pBank').value = person.bank;
+            document.getElementById('pAccName').value = person.accountName;
+            document.getElementById('pAccNum').value = person.accountNumber;
+        } else {
+            document.getElementById('personForm').reset();
+            document.getElementById('editPersonId').value = '';
         }
     }
 
-    const expense = {
-        userId: currentUser.uid,
-        employeeId: empId,
-        date: document.getElementById('expDate').value,
-        amount: parseFloat(document.getElementById('expAmount').value),
-        description: document.getElementById('expDesc').value,
-        category: document.getElementById('expCategory').value,
-        receipts: receiptUrls, // Now contains Supabase URLs
-        receiptCount: receiptUrls.length,
-        status: 'pending'
-    };
+    function closePersonModal() {
+        document.getElementById('personModal').classList.add('hidden');
+        document.getElementById('personModal').classList.remove('flex');
+    }
 
-    try {
-        await db.collection('expenses').doc(id).set(expense);
-        resetExpenseForm();
-    } catch (err) { alert('Error saving expense to database: ' + err.message); }
-}
-        
-        function resetExpenseForm() {
-            document.getElementById('expenseForm').reset();
-            document.getElementById('expDate').valueAsDate = new Date();
-            document.getElementById('receiptPreview').innerHTML = '';
-            tempReceipts = [];
+    async function savePerson(e) {
+        e.preventDefault();
+        const id = document.getElementById('editPersonId').value || db.collection('employees').doc().id;
+        const person = {
+            userId: currentUser.uid,
+            name: document.getElementById('pName').value,
+            employeeId: document.getElementById('pId').value,
+            revolvingFund: parseFloat(document.getElementById('pFund').value),
+            bank: document.getElementById('pBank').value,
+            accountName: document.getElementById('pAccName').value,
+            accountNumber: document.getElementById('pAccNum').value
+        };
+        try {
+            await db.collection('employees').doc(id).set(person);
+            closePersonModal();
+        } catch (err) { alert('Error saving person: ' + err.message); }
+    }
+
+    async function deleteCurrentPerson() {
+        const empId = document.getElementById('currentEmployee').value;
+        if (!empId) return alert('Please select an employee to delete.');
+        if (!confirm('Are you sure? This will also delete all their expenses.')) return;
+        try {
+            const batch = db.batch();
+            const expSnap = await db.collection('expenses').where('userId', '==', currentUser.uid).where('employeeId', '==', empId).get();
+            expSnap.docs.forEach(doc => batch.delete(doc.ref));
+            batch.delete(db.collection('employees').doc(empId));
+            await batch.commit();
+            document.getElementById('currentEmployee').value = '';
+        } catch (err) { alert('Error deleting: ' + err.message); }
+    }
+
+    function renderEmployeeDropdown() {
+        const select = document.getElementById('currentEmployee');
+        const currentVal = select.value;
+        select.innerHTML = '<option value="">-- Select an employee --</option>';
+        employees.forEach(emp => {
+            select.innerHTML += `<option value="${emp.id}">${emp.name} (${emp.employeeId})</option>`;
+        });
+        select.value = currentVal;
+    }
+
+    function loadEmployeeData() {
+        const empId = document.getElementById('currentEmployee').value;
+        const detailsDiv = document.getElementById('employeeDetails');
+        if (!empId) { detailsDiv.classList.add('hidden'); updateSummary(); return; }
+        const emp = employees.find(e => e.id === empId);
+        if (emp) {
+            detailsDiv.classList.remove('hidden');
+            document.getElementById('empId').textContent = emp.employeeId;
+            document.getElementById('empFund').textContent = emp.revolvingFund.toFixed(2);
+            document.getElementById('empBank').textContent = emp.bank;
+            document.getElementById('empAccName').textContent = emp.accountName;
+            document.getElementById('empAccNum').textContent = emp.accountNumber;
         }
+        renderExpenses(); updateSummary();
+    }
 
-        async function deleteExpense(id) {
-    if (!confirm('Delete this expense?')) return;
-    try {
-        // 1. Get the receipt paths from Firestore
-        const expDoc = await db.collection('expenses').doc(id).get();
-        const receipts = expDoc.data().receipts || [];
-        
-        // 2. Delete files from Supabase Storage
-        if (receipts.length > 0) {
-            const pathsToDelete = receipts.map(r => r.path);
-            await supabase.storage.from('receipts').remove(pathsToDelete);
-        }
+    // ==========================================
+    // 5. EXPENSE & RECEIPT MANAGEMENT
+    // ==========================================
+    function handleFiles(files) {
+        tempReceipts = [];
+        const preview = document.getElementById('receiptPreview');
+        preview.innerHTML = '';
+        Array.from(files).forEach(file => {
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = new Image();
+                    img.onload = function() {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 800;
+                        let width = img.width; let height = img.height;
+                        if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+                        canvas.width = width; canvas.height = height;
+                        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                        tempReceipts.push({ name: file.name, data: dataUrl, type: 'image' });
+                        const thumb = document.createElement('img');
+                        thumb.src = dataUrl; thumb.className = 'receipt-thumb';
+                        preview.appendChild(thumb);
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    tempReceipts.push({ name: file.name, data: e.target.result, type: 'pdf' });
+                    const icon = document.createElement('div');
+                    icon.className = 'w-16 h-16 bg-red-100 text-red-600 flex items-center justify-center rounded text-xs font-bold';
+                    icon.textContent = 'PDF';
+                    preview.appendChild(icon);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+    }
 
-        // 3. Delete the document from Firestore
-        await db.collection('expenses').doc(id).delete();
-    } catch (err) { alert('Error deleting expense: ' + err.message); }
-}
+    async function addExpense(e) {
+        e.preventDefault();
+        const empId = document.getElementById('currentEmployee').value;
+        if (!empId) return alert('Please select an employee first.');
 
-        async function markSubmitted(id) {
-            try { await db.collection('expenses').doc(id).update({ status: 'submitted' }); } 
-            catch (err) { alert('Error updating status: ' + err.message); }
-        }
+        const id = db.collection('expenses').doc().id;
+        let receiptUrls = [];
 
-        function switchTab(tab) {
-            currentTab = tab;
-            ['pending', 'submitted', 'all'].forEach(t => {
-                const el = document.getElementById(`tab-${t}`);
-                if (t === tab) { el.classList.add('tab-active'); el.classList.remove('text-gray-500'); }
-                else { el.classList.remove('tab-active'); el.classList.add('text-gray-500'); }
-            });
-            renderExpenses();
-        }
+        for (let receipt of tempReceipts) {
+            try {
+                const res = await fetch(receipt.data);
+                const blob = await res.blob();
+                const fileExt = receipt.name.split('.').pop();
+                const fileName = `${currentUser.uid}/${id}/${Date.now()}.${fileExt}`;
 
-        function renderExpenses() {
-            const empId = document.getElementById('currentEmployee').value;
-            const tbody = document.getElementById('expensesTableBody');
-            tbody.innerHTML = '';
+                const { data, error } = await sb.storage
+                    .from('receipts')
+                    .upload(fileName, blob, { contentType: receipt.type === 'image' ? 'image/jpeg' : 'application/pdf', upsert: false });
 
-            let filtered = expenses.filter(e => e.employeeId === empId);
-            if (currentTab !== 'all') filtered = filtered.filter(e => e.status === currentTab);
-            filtered.sort((a, b) => new Date(a.date) - new Date(b.date));
+                if (error) throw error;
 
-            if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">No expenses found.</td></tr>`;
+                const { data: { publicUrl } } = sb.storage.from('receipts').getPublicUrl(fileName);
+                receiptUrls.push({ name: receipt.name, url: publicUrl, path: fileName, type: receipt.type });
+            } catch (err) {
+                alert('Failed to upload receipt: ' + receipt.name + ' - ' + err.message);
                 return;
             }
-
-            filtered.forEach(exp => {
-                const receiptCount = exp.receipts ? exp.receipts.length : 0;
-                const actions = exp.status === 'pending' 
-                    ? `<button onclick="markSubmitted('${exp.id}')" class="text-green-600 hover:underline text-xs mr-2">Submit</button>
-                       <button onclick="deleteExpense('${exp.id}')" class="text-red-600 hover:underline text-xs">Delete</button>`
-                    : `<span class="text-xs text-gray-400">Submitted</span>`;
-
-                tbody.innerHTML += `
-                    <tr>
-                        <td class="px-4 py-2 text-sm">${exp.date}</td>
-                        <td class="px-4 py-2 text-sm">${exp.description}</td>
-                        <td class="px-4 py-2 text-sm">${exp.category}</td>
-                        <td class="px-4 py-2 text-sm text-right">₱${exp.amount.toFixed(2)}</td>
-                        <td class="px-4 py-2 text-sm text-center">${receiptCount} file(s)</td>
-                        <td class="px-4 py-2 text-center text-sm">${actions}</td>
-                    </tr>
-                `;
-            });
         }
 
-        // ==========================================
-        // 6. SUMMARY & PDF GENERATION
-        // ==========================================
-        function updateSummary() {
-            const empId = document.getElementById('currentEmployee').value;
-            const emp = employees.find(e => e.id === empId);
-            const pendingExpenses = expenses.filter(e => e.employeeId === empId && e.status === 'pending');
-            pendingExpenses.sort((a, b) => new Date(a.date) - new Date(b.date));
+        const expense = {
+            userId: currentUser.uid, employeeId: empId,
+            date: document.getElementById('expDate').value,
+            amount: parseFloat(document.getElementById('expAmount').value),
+            description: document.getElementById('expDesc').value,
+            category: document.getElementById('expCategory').value,
+            receipts: receiptUrls, receiptCount: receiptUrls.length, status: 'pending'
+        };
 
-            const total = pendingExpenses.reduce((sum, e) => sum + e.amount, 0);
-            const fund = emp ? emp.revolvingFund : 0;
-            const cashOnHand = fund - total;
-            const replenishAmount = total;
+        try {
+            await db.collection('expenses').doc(id).set(expense);
+            resetExpenseForm();
+        } catch (err) { alert('Error saving expense: ' + err.message); }
+    }
 
-            document.getElementById('summaryCount').textContent = pendingExpenses.length;
-            document.getElementById('summaryTotal').textContent = `₱${total.toFixed(2)}`;
-            document.getElementById('summaryFund').textContent = `₱${fund.toFixed(2)}`;
-            document.getElementById('summaryCash').textContent = `₱${cashOnHand.toFixed(2)}`;
-            document.getElementById('summaryReplenish').textContent = `₱${replenishAmount.toFixed(2)}`;
+    function resetExpenseForm() {
+        document.getElementById('expenseForm').reset();
+        document.getElementById('expDate').valueAsDate = new Date();
+        document.getElementById('receiptPreview').innerHTML = '';
+        tempReceipts = [];
+    }
 
-            if (pendingExpenses.length > 0) {
-                document.getElementById('summaryPeriod').textContent = `${pendingExpenses[0].date} to ${pendingExpenses[pendingExpenses.length - 1].date}`;
-            } else {
-                document.getElementById('summaryPeriod').textContent = '-';
+    async function deleteExpense(id) {
+        if (!confirm('Delete this expense?')) return;
+        try {
+            const expDoc = await db.collection('expenses').doc(id).get();
+            const receipts = expDoc.data().receipts || [];
+            if (receipts.length > 0) {
+                const pathsToDelete = receipts.map(r => r.path);
+                await sb.storage.from('receipts').remove(pathsToDelete);
+            }
+            await db.collection('expenses').doc(id).delete();
+        } catch (err) { alert('Error deleting expense: ' + err.message); }
+    }
+
+    async function markSubmitted(id) {
+        try { await db.collection('expenses').doc(id).update({ status: 'submitted' }); } 
+        catch (err) { alert('Error updating status: ' + err.message); }
+    }
+
+    function switchTab(tab) {
+        currentTab = tab;
+        ['pending', 'submitted', 'all'].forEach(t => {
+            const el = document.getElementById(`tab-${t}`);
+            if (t === tab) { el.classList.add('tab-active'); el.classList.remove('text-gray-500'); }
+            else { el.classList.remove('tab-active'); el.classList.add('text-gray-500'); }
+        });
+        renderExpenses();
+    }
+
+    function renderExpenses() {
+        const empId = document.getElementById('currentEmployee').value;
+        const tbody = document.getElementById('expensesTableBody');
+        tbody.innerHTML = '';
+        let filtered = expenses.filter(e => e.employeeId === empId);
+        if (currentTab !== 'all') filtered = filtered.filter(e => e.status === currentTab);
+        filtered.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">No expenses found.</td></tr>`;
+            return;
+        }
+
+        filtered.forEach(exp => {
+            const receiptCount = exp.receiptCount || 0;
+            const actions = exp.status === 'pending' 
+                ? `<button onclick="markSubmitted('${exp.id}')" class="text-green-600 hover:underline text-xs mr-2">Submit</button>
+                   <button onclick="deleteExpense('${exp.id}')" class="text-red-600 hover:underline text-xs">Delete</button>`
+                : `<span class="text-xs text-gray-400">Submitted</span>`;
+
+            tbody.innerHTML += `
+                <tr>
+                    <td class="px-4 py-2 text-sm">${exp.date}</td>
+                    <td class="px-4 py-2 text-sm">${exp.description}</td>
+                    <td class="px-4 py-2 text-sm">${exp.category}</td>
+                    <td class="px-4 py-2 text-sm text-right">₱${exp.amount.toFixed(2)}</td>
+                    <td class="px-4 py-2 text-sm text-center">${receiptCount} file(s)</td>
+                    <td class="px-4 py-2 text-center text-sm">${actions}</td>
+                </tr>
+            `;
+        });
+    }
+
+    // ==========================================
+    // 6. SUMMARY & PDF GENERATION
+    // ==========================================
+    function updateSummary() {
+        const empId = document.getElementById('currentEmployee').value;
+        const emp = employees.find(e => e.id === empId);
+        const pendingExpenses = expenses.filter(e => e.employeeId === empId && e.status === 'pending');
+        pendingExpenses.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        const total = pendingExpenses.reduce((sum, e) => sum + e.amount, 0);
+        const fund = emp ? emp.revolvingFund : 0;
+        const cashOnHand = fund - total;
+
+        document.getElementById('summaryCount').textContent = pendingExpenses.length;
+        document.getElementById('summaryTotal').textContent = `₱${total.toFixed(2)}`;
+        document.getElementById('summaryFund').textContent = `₱${fund.toFixed(2)}`;
+        document.getElementById('summaryCash').textContent = `₱${cashOnHand.toFixed(2)}`;
+        document.getElementById('summaryReplenish').textContent = `₱${total.toFixed(2)}`;
+
+        if (pendingExpenses.length > 0) {
+            document.getElementById('summaryPeriod').textContent = `${pendingExpenses[0].date} to ${pendingExpenses[pendingExpenses.length - 1].date}`;
+        } else {
+            document.getElementById('summaryPeriod').textContent = '-';
+        }
+    }
+
+    async function generatePDF() {
+        const empId = document.getElementById('currentEmployee').value;
+        if (!empId) return alert('Please select an employee.');
+        const emp = employees.find(e => e.id === empId);
+        const pendingExpenses = expenses.filter(e => e.employeeId === empId && e.status === 'pending');
+        if (pendingExpenses.length === 0) return alert('No pending expenses.');
+
+        pendingExpenses.sort((a, b) => new Date(a.date) - new Date(b.date));
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        
+        const total = pendingExpenses.reduce((sum, e) => sum + e.amount, 0);
+        const fund = emp.revolvingFund;
+        const cashOnHand = fund - total;
+        const submitDate = document.getElementById('submitDate').value;
+        const note = document.getElementById('submitNote').value;
+
+        doc.setFontSize(16);
+        doc.text('Revolving Fund Replenishment', 105, 20, { align: 'center' });
+        doc.setFontSize(10);
+        doc.text(`Employee Name: ${emp.name}`, 14, 35);
+        doc.text(`ID: ${emp.employeeId}`, 14, 42);
+        doc.text(`Revolving Fund: ₱${fund.toFixed(2)}`, 14, 49);
+        doc.text(`Expense Period`, 140, 35);
+        doc.text(`From: ${pendingExpenses[0].date}`, 140, 42);
+        doc.text(`To: ${pendingExpenses[pendingExpenses.length - 1].date}`, 140, 49);
+        doc.text(`Date Submitted: ${submitDate}`, 140, 56);
+
+        const tableColumn = ["DATE", "DESCRIPTION", "CATEGORY", "AMOUNT"];
+        const tableRows = pendingExpenses.map(exp => [exp.date, exp.description, exp.category, `₱${exp.amount.toFixed(2)}`]);
+
+        doc.autoTable({
+            head: [tableColumn], body: tableRows, startY: 65, theme: 'grid',
+            headStyles: { fillColor: [59, 130, 246] }, styles: { fontSize: 9 },
+            columnStyles: { 0: { cellWidth: 30 }, 3: { cellWidth: 30, halign: 'right' } }
+        });
+
+        const finalY = doc.lastAutoTable.finalY + 10;
+        doc.text(`TOTAL: ₱${total.toFixed(2)}`, 140, finalY);
+        doc.text(`LESS: Revolving Fund: ₱${fund.toFixed(2)}`, 140, finalY + 7);
+        doc.text(`CASH ON HAND: ₱${cashOnHand.toFixed(2)}`, 140, finalY + 14);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`AMOUNT TO BE REPLENISHED: ₱${total.toFixed(2)}`, 140, finalY + 24);
+        doc.setFont('helvetica', 'normal');
+
+        if (note) doc.text(`Note: ${note}`, 14, finalY + 10);
+
+        const bankY = finalY + 40;
+        doc.text('Please deposit on this account:', 14, bankY);
+        doc.text(`Bank: ${emp.bank}`, 14, bankY + 7);
+        doc.text(`Account Name: ${emp.accountName}`, 14, bankY + 14);
+        doc.text(`Account Number: ${emp.accountNumber}`, 14, bankY + 21);
+
+        const sigY = bankY + 40;
+        doc.text('Requested by:', 14, sigY); doc.text('_________________________', 14, sigY + 15); doc.text("Employee's Signature", 14, sigY + 22);
+        doc.text('Checked by:', 14, sigY + 35); doc.text('_________________________', 14, sigY + 50); doc.text('Supervisor', 14, sigY + 57);
+        doc.text('Approved by:', 110, sigY); doc.text('_________________________', 110, sigY + 15); doc.text('COO', 110, sigY + 22);
+        doc.text('_________________________', 110, sigY + 35); doc.text('CEO', 110, sigY + 42);
+        doc.text('Noted by:', 110, sigY + 55); doc.text('_________________________', 110, sigY + 70); doc.text('Finance', 110, sigY + 77);
+
+        let hasReceipts = false;
+        for (const exp of pendingExpenses) {
+            const recs = exp.receipts || [];
+            for (const receipt of recs) {
+                if (!hasReceipts) {
+                    doc.addPage(); doc.setFontSize(14); doc.text('Attached Receipts', 105, 20, { align: 'center' }); hasReceipts = true;
+                } else { doc.addPage(); }
+                doc.setFontSize(10); doc.text(`${exp.date} - ${exp.description} (${receipt.name})`, 14, 30);
+                if (receipt.type === 'image') {
+                    try { doc.addImage(receipt.url, 'JPEG', 14, 35, 180, 0); } 
+                    catch (e) { doc.text('Could not embed image', 14, 40); }
+                } else {
+                    doc.setTextColor(150, 0, 0); doc.text('PDF receipt on file', 14, 40); doc.setTextColor(0, 0, 0);
+                }
             }
         }
 
-        function generatePDF() {
-            const empId = document.getElementById('currentEmployee').value;
-            if (!empId) return alert('Please select an employee.');
-            
-            const emp = employees.find(e => e.id === empId);
-            const pendingExpenses = expenses.filter(e => e.employeeId === empId && e.status === 'pending');
-            if (pendingExpenses.length === 0) return alert('No pending expenses.');
-
-            pendingExpenses.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            
-            const total = pendingExpenses.reduce((sum, e) => sum + e.amount, 0);
-            const fund = emp.revolvingFund;
-            const cashOnHand = fund - total;
-            const replenishAmount = total;
-            const submitDate = document.getElementById('submitDate').value;
-            const note = document.getElementById('submitNote').value;
-            const fromDate = pendingExpenses[0].date;
-            const toDate = pendingExpenses[pendingExpenses.length - 1].date;
-
-            doc.setFontSize(16);
-            doc.text('Revolving Fund Replenishment', 105, 20, { align: 'center' });
-            
-            doc.setFontSize(10);
-            doc.text(`Employee Name: ${emp.name}`, 14, 35);
-            doc.text(`ID: ${emp.employeeId}`, 14, 42);
-            doc.text(`Revolving Fund: ₱${fund.toFixed(2)}`, 14, 49);
-            
-            doc.text(`Expense Period`, 140, 35);
-            doc.text(`From: ${fromDate}`, 140, 42);
-            doc.text(`To: ${toDate}`, 140, 49);
-            doc.text(`Date Submitted: ${submitDate}`, 140, 56);
-
-            const tableColumn = ["DATE", "DESCRIPTION", "CATEGORY", "AMOUNT"];
-            const tableRows = pendingExpenses.map(exp => [exp.date, exp.description, exp.category, `₱${exp.amount.toFixed(2)}`]);
-
-            doc.autoTable({
-                head: [tableColumn], body: tableRows, startY: 65, theme: 'grid',
-                headStyles: { fillColor: [59, 130, 246] }, styles: { fontSize: 9 },
-                columnStyles: { 0: { cellWidth: 30 }, 3: { cellWidth: 30, halign: 'right' } }
-            });
-
-            const finalY = doc.lastAutoTable.finalY + 10;
-            doc.setFontSize(10);
-            doc.text(`TOTAL: ₱${total.toFixed(2)}`, 140, finalY);
-            doc.text(`LESS: Revolving Fund: ₱${fund.toFixed(2)}`, 140, finalY + 7);
-            doc.text(`CASH ON HAND: ₱${cashOnHand.toFixed(2)}`, 140, finalY + 14);
-            doc.setFont('helvetica', 'bold');
-            doc.text(`AMOUNT TO BE REPLENISHED: ₱${replenishAmount.toFixed(2)}`, 140, finalY + 24);
-            doc.setFont('helvetica', 'normal');
-
-            if (note) doc.text(`Note: ${note}`, 14, finalY + 10);
-
-            const bankY = finalY + 40;
-            doc.text('Please deposit on this account:', 14, bankY);
-            doc.text(`Bank: ${emp.bank}`, 14, bankY + 7);
-            doc.text(`Account Name: ${emp.accountName}`, 14, bankY + 14);
-            doc.text(`Account Number: ${emp.accountNumber}`, 14, bankY + 21);
-
-            const sigY = bankY + 40;
-            doc.text('Requested by:', 14, sigY); doc.text('_________________________', 14, sigY + 15); doc.text("Employee's Signature", 14, sigY + 22);
-            doc.text('Checked by:', 14, sigY + 35); doc.text('_________________________', 14, sigY + 50); doc.text('Supervisor', 14, sigY + 57);
-            doc.text('Approved by:', 110, sigY); doc.text('_________________________', 110, sigY + 15); doc.text('COO', 110, sigY + 22);
-            doc.text('_________________________', 110, sigY + 35); doc.text('CEO', 110, sigY + 42);
-            doc.text('Noted by:', 110, sigY + 55); doc.text('_________________________', 110, sigY + 70); doc.text('Finance', 110, sigY + 77);
-
-            // Attach Receipts
-           let hasReceipts = false;
-            for (const exp of pendingExpenses) {
-                const recs = exp.receipts || [];
-                for (const receipt of recs) {
-                    if (!hasReceipts) {
-                        doc.addPage();
-                        doc.setFontSize(14);
-                        doc.text('Attached Receipts', 105, 20, { align: 'center' });
-                        hasReceipts = true;
-                    } else {
-                        doc.addPage();
-                    }
-                    doc.setFontSize(10);
-                    doc.text(`${exp.date} - ${exp.description} (${receipt.name})`, 14, 30);
-
-                    if (receipt.type === 'image') {
-                        try {
-                            // jsPDF can load public Supabase URLs directly
-                            doc.addImage(receipt.url, 'JPEG', 14, 35, 180, 0);
-                        } catch (e) {
-                            doc.text('Could not embed image (check internet connection)', 14, 40);
-                        }
-                    } else {
-                        doc.setTextColor(150, 0, 0);
-                        doc.text('PDF receipt on file — send the original file to Finance.', 14, 40);
-                        doc.setTextColor(0, 0, 0);
-                        }
-                    });
-                }
-            });
-
-            doc.save(`RF_Replenishment_${emp.name.replace(/\s/g, '_')}_${submitDate}.pdf`);
-
-            // Mark as submitted
-            pendingExpenses.forEach(exp => {
-                db.collection('expenses').doc(exp.id).update({ status: 'submitted' });
-            });
-            alert('PDF Generated and expenses marked as submitted!');
-        }
-    </script>
+        doc.save(`RF_Replenishment_${emp.name.replace(/\s/g, '_')}_${submitDate}.pdf`);
+        pendingExpenses.forEach(exp => db.collection('expenses').doc(exp.id).update({ status: 'submitted' }));
+        alert('PDF Generated and expenses marked as submitted!');
+    }
+</script>
 </body>
 </html>

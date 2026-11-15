@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Replenishment Desk</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS for Excel Generation -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     
     <!-- Firebase SDKs -->
@@ -94,30 +95,30 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
                     <select id="expCategory" required class="w-full border-gray-300 rounded-md shadow-sm p-2 border">
-    <option value="Office Supplies">Office Supplies</option>
-    <option value="Printing & Reproduction">Printing & Reproduction</option>
-    <option value="Transportation - Local">Transportation - Local</option>
-    <option value="Transportation - Out of Town">Transportation - Out of Town</option>
-    <option value="Fuel">Fuel</option>
-    <option value="Parking & Tolls">Parking & Tolls</option>
-    <option value="Meals & Refreshments">Meals & Refreshments</option>
-    <option value="Representation Expenses">Representation Expenses</option>
-    <option value="Postage & Courier">Postage & Courier</option>
-    <option value="Telephone & Internet">Telephone & Internet</option>
-    <option value="Utilities">Utilities</option>
-    <option value="Software & Subscriptions">Software & Subscriptions</option>
-    <option value="Training & Seminars">Training & Seminars</option>
-    <option value="Professional Fees">Professional Fees</option>
-    <option value="Maintenance & Repairs">Maintenance & Repairs</option>
-    <option value="Janitorial & Hygiene">Janitorial & Hygiene</option>
-    <option value="Medical & Health">Medical & Health</option>
-    <option value="Gifts & Tokens">Gifts & Tokens</option>
-    <option value="Donations & Contributions">Donations & Contributions</option>
-    <option value="Equipment Rental">Equipment Rental</option>
-    <option value="Accommodation & Hotel">Accommodation & Hotel</option>
-    <option value="Security & Cleaning">Security & Cleaning</option>
-    <option value="Miscellaneous">Miscellaneous</option>
-</select>
+                        <option value="Office Supplies">Office Supplies</option>
+                        <option value="Printing & Reproduction">Printing & Reproduction</option>
+                        <option value="Transportation - Local">Transportation - Local</option>
+                        <option value="Transportation - Out of Town">Transportation - Out of Town</option>
+                        <option value="Fuel">Fuel</option>
+                        <option value="Parking & Tolls">Parking & Tolls</option>
+                        <option value="Meals & Refreshments">Meals & Refreshments</option>
+                        <option value="Representation Expenses">Representation Expenses</option>
+                        <option value="Postage & Courier">Postage & Courier</option>
+                        <option value="Telephone & Internet">Telephone & Internet</option>
+                        <option value="Utilities">Utilities</option>
+                        <option value="Software & Subscriptions">Software & Subscriptions</option>
+                        <option value="Training & Seminars">Training & Seminars</option>
+                        <option value="Professional Fees">Professional Fees</option>
+                        <option value="Maintenance & Repairs">Maintenance & Repairs</option>
+                        <option value="Janitorial & Hygiene">Janitorial & Hygiene</option>
+                        <option value="Medical & Health">Medical & Health</option>
+                        <option value="Gifts & Tokens">Gifts & Tokens</option>
+                        <option value="Donations & Contributions">Donations & Contributions</option>
+                        <option value="Equipment Rental">Equipment Rental</option>
+                        <option value="Accommodation & Hotel">Accommodation & Hotel</option>
+                        <option value="Security & Cleaning">Security & Cleaning</option>
+                        <option value="Miscellaneous">Miscellaneous</option>
+                    </select>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Receipts</label>
@@ -204,7 +205,7 @@
 
 <script>
     // ==========================================
-    // 1. CONFIGURATION (PASTE YOUR KEYS HERE)
+    // 1. CONFIGURATION
     // ==========================================
     const firebaseConfig = {
         apiKey: "AIzaSyBhfzbUBvDJSwSQ4HnLq1cSIHnRG31EWXQ",
@@ -215,15 +216,15 @@
         appId: "1:1096121825331:web:8f24e1d61f6639f8550b46"
     };
 
-        const SUPABASE_URL = 'https://tixckbbyxrhvsljjbxuo.supabase.co'; // Keep your actual URL here
-        const SUPABASE_ANON_KEY = 'sb_publishable_w4Ongi6sBdKqNoNskF9YwQ_QQdZvsDY'; // Keep your actual key here
+    const SUPABASE_URL = 'https://tixckbbyxrhvsljjbxuo.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_w4Ongi6sBdKqNoNskF9YwQ_QQdZvsDY';
 
     // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
     const db = firebase.firestore();
 
-    // Initialize Supabase (using 'sb' to avoid variable name conflicts)
+    // Initialize Supabase
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // --- STATE ---
@@ -536,7 +537,7 @@
     }
 
     // ==========================================
-    // 6. SUMMARY & PDF GENERATION
+    // 6. SUMMARY & EXCEL GENERATION
     // ==========================================
     function updateSummary() {
         const empId = document.getElementById('currentEmployee').value;
@@ -561,7 +562,7 @@
         }
     }
 
-            async function generateExcel() {
+    async function generateExcel() {
         const empId = document.getElementById('currentEmployee').value;
         if (!empId) return alert('Please select an employee.');
         const emp = employees.find(e => e.id === empId);
@@ -603,12 +604,12 @@
             data.push([exp.date, exp.description, exp.category, `₱${exp.amount.toFixed(2)}`, ""]);
         });
 
-        // Add summary and footer rows
-        data.push(["", "", "TOTAL", `₱${total.toFixed(2)}`, ""]);
-        data.push(["Note:", note, "LESS: Revolving Fund", `₱${fund.toFixed(2)}`, ""]);
-        data.push(["", "", "CASH ON HAND", `₱${cashOnHand.toFixed(2)}`, ""]);
+        // Add summary and footer rows matching the Excel template exactly
+        data.push(["", "", "", "TOTAL", `₱${total.toFixed(2)}`]);
+        data.push(["Note:", note, "", "LESS: Revolving Fund", `₱${fund.toFixed(2)}`]);
+        data.push(["", "", "", "CASH ON HAND", `₱${cashOnHand.toFixed(2)}`]);
         data.push(["", "", "", "", ""]);
-        data.push(["", "", "AMOUNT TO BE REPLENISHED:", `₱${replenishAmount.toFixed(2)}`, ""]);
+        data.push(["", "", "", "AMOUNT TO BE REPLENISHED:", `₱${replenishAmount.toFixed(2)}`]);
         data.push(["", "", "", "", "Don't forget to attach receipts!"]);
         data.push(["Please deposit on this account:", "", "", "", ""]);
         data.push(["Bank", emp.bank, "", "", ""]);
@@ -627,8 +628,7 @@
         data.push(["", "CEO", "", "", ""]);
         data.push(["", "", "", "", ""]);
         data.push(["", "", "", "", ""]);
-        data.push(["Noted by:", "", "Finance", "", ""])
-        ];
+        data.push(["Noted by:", "", "Finance", "", ""]);
 
         // Create a new workbook and worksheet
         const wb = XLSX.utils.book_new();
@@ -636,8 +636,8 @@
 
         // Set column widths for better readability
         ws['!cols'] = [
-            { wch: 20 }, // Column A
-            { wch: 25 }, // Column B
+            { wch: 25 }, // Column A
+            { wch: 20 }, // Column B
             { wch: 35 }, // Column C
             { wch: 25 }, // Column D
             { wch: 35 }  // Column E
